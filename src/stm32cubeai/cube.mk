@@ -17,6 +17,7 @@ FIRM_OBJ += $(wildcard $(BUILD)/$(CMSIS_DIR)/src/dsp/MatrixFunctions/*.o)
 FIRM_OBJ += $(addprefix $(BUILD)/stm32cubeai/data/,\
 	network.o                       \
 	network_data.o                  \
+	network_data_params.o           \
 	)
 
 FIRM_OBJ += $(addprefix $(BUILD)/stm32cubeai/,\

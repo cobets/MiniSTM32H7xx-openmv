@@ -35,9 +35,10 @@ SRCS += $(addprefix ,\
    )
 
 SRCS += $(addprefix data/,\
+	network_data_params.c \
 	network_data.c        \
 	network.c             \
-   )
+	)
 
 OBJS = $(addprefix $(BUILD)/, $(SRCS:.c=.o))
 OBJ_DIRS = $(sort $(dir $(OBJS)))

@@ -47,8 +47,11 @@ ai_network_exec_ctx network_handle;
 __STATIC_INLINE void aiPrintLayoutBuffer(const char *msg, int idx,
                                          const ai_buffer *buffer) {
   uint32_t type_id = AI_BUFFER_FMT_GET_TYPE(buffer->format);
-  printf("%s [%d]          : shape(HWC):(%d,%d,%ld) format=", msg, idx,
-         buffer->height, buffer->width, buffer->channels);
+  printf("%s [%d]          : shape(HWC):(%ld,%ld,%ld) format=", msg, idx,
+         AI_BUFFER_SHAPE_ELEM(buffer, AI_SHAPE_HEIGHT),
+         AI_BUFFER_SHAPE_ELEM(buffer, AI_SHAPE_WIDTH),
+         AI_BUFFER_SHAPE_ELEM(buffer, AI_SHAPE_CHANNEL)
+  );
   if (type_id == AI_BUFFER_FMT_TYPE_Q)
     printf("Q%d.%d (%dbits, %s)",
            (int)AI_BUFFER_FMT_GET_BITS(buffer->format) -
@@ -101,7 +104,9 @@ void aiPrintNetworkInfo(const ai_network_report *report) {
 }
 
 ai_u32 aiBufferSize(const ai_buffer *buffer) {
-  return buffer->height * buffer->width * buffer->channels;
+  return   AI_BUFFER_SHAPE_ELEM(buffer, AI_SHAPE_HEIGHT) 
+         * AI_BUFFER_SHAPE_ELEM(buffer, AI_SHAPE_WIDTH)
+         * AI_BUFFER_SHAPE_ELEM(buffer, AI_SHAPE_CHANNEL);
 }
 
 /**
@@ -208,9 +213,11 @@ int aiRun(stnn_t *net, image_t *img, rectangle_t *roi) {
 
   // build params structure to provide the reference of the
   // activation and weight buffers
+  
   const ai_network_params params = {
-      AI_NETWORK_DATA_WEIGHTS(ai_network_data_weights_get()),
-      AI_NETWORK_DATA_ACTIVATIONS(activations)};
+    .params = AI_NETWORK_DATA_WEIGHTS(ai_network_data_weights_get()),
+    .activations = AI_NETWORK_DATA_ACTIVATIONS(activations)
+  };
 
   if (!ai_network_init(net->nn_exec_ctx_ptr->network, &params)) {
     err = ai_network_get_error(net->nn_exec_ctx_ptr->network);
@@ -229,10 +236,10 @@ int aiRun(stnn_t *net, image_t *img, rectangle_t *roi) {
   ai_output[0] = net->nn_exec_ctx_ptr->report.outputs[0];
 
   /* Initialize input/output buffer handlers */
-  ai_input[0].n_batches = 1;
+  AI_BUFFER_SHAPE_ELEM(&ai_input[0], AI_SHAPE_BATCH) = 1; // ai_input[0].n_batches = 1;
   ai_input[0].data = AI_HANDLE_PTR(in_data);
 
-  ai_output[0].n_batches = 1;
+  AI_BUFFER_SHAPE_ELEM(&ai_output[0], AI_SHAPE_BATCH) = 1; // ai_output[0].n_batches = 1;
   ai_output[0].data = AI_HANDLE_PTR(out_data);
 
   /* Perform the inference */
@@ -265,12 +272,12 @@ void ai_transform_input(ai_buffer *input_net, image_t *img, ai_u8 *input_data,
   // Example for MNIST CNN
   // Cast to float pointer
   ai_float *_input_data = (ai_float *)input_data;
-  int x_ratio = (int)((roi->w << 16) / input_net->width) + 1;
-  int y_ratio = (int)((roi->h << 16) / input_net->height) + 1;
+  int x_ratio = (int)((roi->w << 16) / AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_WIDTH)) + 1;
+  int y_ratio = (int)((roi->h << 16) / AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_HEIGHT)) + 1;
 
-  for (int y = 0, i = 0; y < input_net->height; y++) {
+  for (int y = 0, i = 0; y < AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_HEIGHT); y++) {
     int sy = (y * y_ratio) >> 16;
-    for (int x = 0; x < input_net->width; x++, i++) {
+    for (int x = 0; x < AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_WIDTH); x++, i++) {
       int sx = (x * x_ratio) >> 16;
       uint8_t p = IM_GET_GS_PIXEL(img, sx + roi->x, sy + roi->y);
       _input_data[i] = (float)(p / 255.0f);
