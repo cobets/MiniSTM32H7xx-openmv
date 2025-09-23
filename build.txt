@@ -1,0 +1,59 @@
+How to build
+============
+
+mkdir $HOME/openmv_workspace
+cd $HOME/openmv_workspace
+
+Install toolchain directly from ARM
+-----------------------------------
+wget https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-rm/7-2018q2/gcc-arm-none-eabi-7-2018-q2-update-linux.tar.bz2
+tar xf gcc-arm-none-eabi-7-2018-q2-update-linux.tar.bz2
+PATH=$HOME/openmv_workspace/gcc-arm-none-eabi-7-2018-q2-update/bin:$PATH
+-----
+arm-none-eabi-gcc --version
+arm-none-eabi-gcc (GNU Tools for Arm Embedded Processors 7-2018-q2-update) 7.3.1 20180622 (release) [ARM/embedded-7-branch revision 261907]
+
+
+Install the stm32ai command line to generate the optimized code
+---------------------------------------------------------------
+cd $HOME/openmv_workspace
+download version 8.0.1 from https://www.st.com/en/embedded-software/x-cube-ai.html#get-software
+chmod 644 x-cube-ai-linux_v8.0.1.zip
+unzip x-cube-ai-linux_v8.0.1.zip
+mv STMicroelectronics.X-CUBE-AI.8.0.1.pack STMicroelectronics.X-CUBE-AI.8.0.1.zip
+unzip STMicroelectronics.X-CUBE-AI.8.0.1.zip -d X-CUBE-AI.8.0.1
+unzip stm32ai-linux-8.0.1.zip -d X-CUBE-AI.8.0.1/Utilities
+export PATH=$HOME/openmv_workspace/X-CUBE-AI.8.0.1/Utilities/linux:$PATH
+-----
+stm32ai --version
+stm32ai - Neural Network Tools for STM32AI v1.7.0 (STM.ai v8.0.1-19450)
+
+
+Clone repository
+----------------
+cd $HOME/openmv_workspace
+git clone https://github.com/cobets/MiniSTM32H7xx-openmv.git openmv
+git checkout MiniSTM32H750VB
+
+
+Generate AI model
+-----------------
+cd $HOME/openmv_workspace/openmv/src/stm32cubeai
+mkdir -p AI/{Inc,Lib}
+mkdir data
+cp $HOME/openmv_workspace/X-CUBE-AI.8.0.1/Middlewares/ST/AI/Inc/* AI/Inc/
+cp $HOME/openmv_workspace/X-CUBE-AI.8.0.1/Middlewares/ST/AI/Lib/GCC/STM32H7/NetworkRuntime*_CM7_GCC.a AI/Lib/NetworkRuntime_CM7_GCC.a
+stm32ai generate -m example/st_mnist_v1_28_tfs.h5 -o data/
+
+
+Build firmware
+--------------
+cd $HOME/openmv_workspace/openmv/src/micropython/mpy-cross
+make
+cd $HOME/openmv_workspace/openmv/src/
+make clean
+make TARGET=WeActStudioSTM32H7xx CUBEAI=1
+
+Done
+----
+Adapted from https://wiki.st.com/stm32mcu/wiki/AI:How_to_add_AI_model_to_OpenMV_ecosystem

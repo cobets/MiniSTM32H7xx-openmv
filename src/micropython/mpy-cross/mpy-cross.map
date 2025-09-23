@@ -5793,8 +5793,9 @@ LOAD /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
 .rodata         0x0000000000045000     0x7b52
  *(.rodata .rodata.* .gnu.linkonce.r.*)
  .rodata.gc_free.part.0.str1.1
-                0x0000000000045000     0x40b8 build/py/gc.o
+                0x0000000000045000     0x40b2 build/py/gc.o
                                          0x1b (size before relaxing)
+ *fill*         0x00000000000490b2        0x6 
  .rodata.gc_free.part.0.str1.8
                 0x00000000000490b8       0x1f build/py/gc.o
  .rodata.gc_realloc.str1.1
@@ -7611,7 +7612,7 @@ LOAD /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
  .rodata.usage.isra.0.str1.1
                 0x000000000004cb52      0x2f4 build/main.o
  .rodata.main_.str1.1
-                0x000000000004cb52      0x12e build/main.o
+                0x000000000004cb52      0x128 build/main.o
  .rodata.nlr_jump_fail.str1.1
                 0x000000000004cb52       0x18 build/main.o
 
