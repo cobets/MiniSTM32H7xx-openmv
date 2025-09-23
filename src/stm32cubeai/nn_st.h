@@ -39,8 +39,7 @@ void aiPrintNetworkInfo(const ai_network_report *report);
 
 void aiInit(const char *nn_name, stnn_t *net);
 int aiRun(stnn_t *net, image_t *img, rectangle_t *roi);
-void ai_transform_input(ai_buffer *input_net, image_t *img, ai_u8 *input_data,
-                        rectangle_t *roi);
+void ai_transform_input(ai_buffer *input_net, image_t *img, ai_float *input_data, rectangle_t *roi);
 void aiDeInit(void);
 
 #ifdef __cplusplus

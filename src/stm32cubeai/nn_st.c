@@ -28,13 +28,14 @@ static void crc_init(void) {
   HAL_CRC_Init(&hcrc);
 }
 
-AI_ALIGNED(4)
+static ai_float in_data[AI_NETWORK_IN_1_SIZE];
 static ai_float out_data[AI_NETWORK_OUT_1_SIZE];
-ai_network_exec_ctx network_handle;
+static ai_u8 activations[AI_NETWORK_DATA_ACTIVATIONS_SIZE];
 
-#define AI_BUFFER_NULL(ptr_)                                                   \
-  AI_BUFFER_OBJ_INIT(AI_BUFFER_FORMAT_NONE | AI_BUFFER_FMT_FLAG_CONST, 0, 0,   \
-                     0, 0, AI_HANDLE_PTR(ptr_))
+static ai_buffer *ai_input;
+static ai_buffer *ai_output;
+
+static ai_network_exec_ctx network_handle;
 
 /**
  * @brief Prints the layout of the ai_buffer (mostly for debug)
@@ -132,13 +133,20 @@ void aiLogErr(const ai_error err, const char *fct) {
  */
 static int aiBootstrap(const char *nn_name) {
   crc_init();
-  ai_error err;
 
   // Creating the network
   printf("Creating the network \"%s\"..\r\n", nn_name);
-  err = ai_network_create(&network_handle.network, NULL);
-  if (err.type) {
-    aiLogErr(err, "ai_network_create");
+
+  const ai_handle acts[] = { activations };
+
+  ai_error err = ai_network_create_and_init(
+    &network_handle.network,
+    acts,
+    NULL
+  );
+
+  if (err.type != AI_ERROR_NONE) {
+    aiLogErr(err, "ai_network_create_and_init");
     return -1;
   }
 
@@ -152,13 +160,18 @@ static int aiBootstrap(const char *nn_name) {
     network_handle.network = AI_HANDLE_NULL;
     return -2;
   }
+  
   // Initialize the instance
   printf("Initializing the network\r\n");
+
+  ai_input = ai_network_inputs_get(network_handle.network, NULL);
+  ai_output = ai_network_outputs_get(network_handle.network, NULL);
+
   return 0;
 }
 
 AI_DECLARE_STATIC
-ai_bool ai_mnetwork_is_valid(const char *network_name, const char *name) {
+ai_bool ai_network_is_valid(const char *network_name, const char *name) {
   if (network_name && (strlen(name) == strlen(network_name)) &&
       (strncmp(name, network_name, strlen(name)) == 0)) {
     return true;
@@ -181,14 +194,15 @@ void aiInit(const char *network_name, stnn_t *net) {
 
   // Discover and init the embedded network
   name = (const char *)AI_NETWORK_MODEL_NAME;
-  if (ai_mnetwork_is_valid(network_name, name)) {
+
+  if (ai_network_is_valid(network_name, name)) {
     printf("\r\nFound network \"%s\"\r\n", name);
     aiBootstrap(name);
 
   } else {
-    printf("\r\error network name!, please enter the right name \"%s\"\r\n",
-           name);
+    printf("\r\error network name!, please enter the right name \"%s\"\r\n", name);
   }
+
   net->nn_exec_ctx_ptr = &network_handle;
 }
 
@@ -202,57 +216,20 @@ void aiInit(const char *network_name, stnn_t *net) {
  * @return int error code
  */
 int aiRun(stnn_t *net, image_t *img, rectangle_t *roi) {
-  ai_i32 nbatch;
-  ai_error err;
-
-  fb_alloc_mark();
-  AI_ALIGNED(4)
-  ai_u8 *activations = fb_alloc(AI_NETWORK_DATA_ACTIVATIONS_SIZE, FB_ALLOC_NO_HINT);
-  AI_ALIGNED(4)
-  ai_u8 *in_data = fb_alloc(AI_NETWORK_IN_1_SIZE_BYTES, FB_ALLOC_NO_HINT);
-
-  // build params structure to provide the reference of the
-  // activation and weight buffers
-  
-  const ai_network_params params = {
-    .params = AI_NETWORK_DATA_WEIGHTS(ai_network_data_weights_get()),
-    .activations = AI_NETWORK_DATA_ACTIVATIONS(activations)
-  };
-
-  if (!ai_network_init(net->nn_exec_ctx_ptr->network, &params)) {
-    err = ai_network_get_error(net->nn_exec_ctx_ptr->network);
-    aiLogErr(err, "ai_network_init");
-    ai_network_destroy(net->nn_exec_ctx_ptr->network);
-    net->nn_exec_ctx_ptr->network = AI_HANDLE_NULL;
-  }
-
   ai_transform_input(net->nn_exec_ctx_ptr->report.inputs, img, in_data, roi);
 
-  /* Create the AI buffer IO handlers */
-  ai_buffer ai_input[1];
-  ai_buffer ai_output[1];
+  ai_input->data = AI_HANDLE_PTR(in_data);
+  ai_output->data = AI_HANDLE_PTR(out_data);
+  
+  // Perform the inference
+  ai_i32 nbatch = ai_network_run(net->nn_exec_ctx_ptr->network, ai_input, ai_output);
 
-  ai_input[0] = net->nn_exec_ctx_ptr->report.inputs[0];
-  ai_output[0] = net->nn_exec_ctx_ptr->report.outputs[0];
-
-  /* Initialize input/output buffer handlers */
-  AI_BUFFER_SHAPE_ELEM(&ai_input[0], AI_SHAPE_BATCH) = 1; // ai_input[0].n_batches = 1;
-  ai_input[0].data = AI_HANDLE_PTR(in_data);
-
-  AI_BUFFER_SHAPE_ELEM(&ai_output[0], AI_SHAPE_BATCH) = 1; // ai_output[0].n_batches = 1;
-  ai_output[0].data = AI_HANDLE_PTR(out_data);
-
-  /* Perform the inference */
-  nbatch = ai_network_run(net->nn_exec_ctx_ptr->network, &ai_input[0],
-                          &ai_output[0]);
   if (nbatch != 1) {
-    err = ai_network_get_error(net->nn_exec_ctx_ptr->network);
+    ai_error err = ai_network_get_error(net->nn_exec_ctx_ptr->network);
     printf("AI error (ai_network_run) code= %d\n", err.code);
   }
 
   net->nn_exec_ctx_ptr->report.outputs->data = out_data;
-
-  fb_alloc_free_till_mark();
 
   return 0;
 }
@@ -266,22 +243,30 @@ int aiRun(stnn_t *net, image_t *img, rectangle_t *roi) {
  * @param input_data[] transformed data to be feed to the network
  * @param roi[in] region of interest
  */
-void ai_transform_input(ai_buffer *input_net, image_t *img, ai_u8 *input_data,
-                        rectangle_t *roi) {
+void ai_transform_input(ai_buffer *input_net, image_t *img, ai_float *input_data, rectangle_t *roi) {
+  // printf("roi x=%d,y=%d,w=%d,h=%d\r\n", roi->x, roi->y,roi->w,roi->h);
 
   // Example for MNIST CNN
-  // Cast to float pointer
-  ai_float *_input_data = (ai_float *)input_data;
   int x_ratio = (int)((roi->w << 16) / AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_WIDTH)) + 1;
   int y_ratio = (int)((roi->h << 16) / AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_HEIGHT)) + 1;
+
+  // printf("x_ratio=%d,y_ratio=%d\r\n", x_ratio, y_ratio);
 
   for (int y = 0, i = 0; y < AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_HEIGHT); y++) {
     int sy = (y * y_ratio) >> 16;
     for (int x = 0; x < AI_BUFFER_SHAPE_ELEM(input_net, AI_SHAPE_WIDTH); x++, i++) {
       int sx = (x * x_ratio) >> 16;
-      uint8_t p = IM_GET_GS_PIXEL(img, sx + roi->x, sy + roi->y);
-      _input_data[i] = (float)(p / 255.0f);
+      int pos_x = sx + roi->x;
+      int pos_y = sy + roi->y;
+      uint8_t p = IM_GET_GS_PIXEL(img, pos_x, pos_y);
+      input_data[i] = (float)(p / 127.5f - 1);
+      //input_data[i] = (float)p;
+      //_input_data[i] = 255-p;
+      // printf("%3d", p);
+      // if (p != 0)
+        // printf("x=%d,y=%d,i=%d,sx=%d,sy=%d,pos_x=%d,pos_y=%d,p=%d\r\n", x, y, i, sx, sy, pos_x, pos_y, p);
     }
+    // printf("\r\n");
   }
 
   ///////////////////////////////////////////////////////////////////////////
